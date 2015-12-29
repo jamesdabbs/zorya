@@ -1,0 +1,8 @@
+{
+  "name": "zorya",
+  "description": "Ever vigilant",
+  "image": "heroku/cedar:14",
+  "addons": [
+    "heroku-postgresql"
+  ]
+}
