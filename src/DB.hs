@@ -20,10 +20,11 @@ import Types
 import Model (migrateAll)
 
 poolFromConnString :: String -> IO ConnectionPool
-poolFromConnString cs = runNoLoggingT $ createPostgresqlPool cs' 10
-  where
-    cs' = normalize $ parseDatabaseUrl cs
-    normalize = encodeUtf8 . T.unwords . map (\(k,v) -> T.concat [k, "='", v, "'"])
+poolFromConnString cs =
+  let normalize = encodeUtf8 . T.unwords . map (\(k,v) -> T.concat [k, "='", v, "'"])
+      cs'       = normalize $ parseDatabaseUrl cs
+      pool      = createPostgresqlPool cs' 10
+  in runStdoutLoggingT pool
 
 runDB :: (MonadReader BotConf m, MonadIO m) =>
          SqlPersistT IO b -> m b

@@ -68,7 +68,9 @@ doRpc k m payload = do
   ch <- asks rabbitChannel
   let reply = liftIO . replyTo ch m
   case k of
-    "rpc.ping"     -> reply "pong"
+    "rpc.ping" -> do
+      name <- asks botName
+      reply $ "pong (" <> (BC.pack $ T.unpack name) <> ")"
     "rpc.download" -> do
       doDownload payload
       reply $ "Downloading " <> payload

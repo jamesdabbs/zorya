@@ -68,6 +68,7 @@ executable zorya
   build-depends:       base
                      , zorya
                      , mtl
+                     , text
                      , transformers
   default-language:    Haskell2010
   default-extensions:  GeneralizedNewtypeDeriving

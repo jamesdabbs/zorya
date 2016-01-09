@@ -4,7 +4,7 @@ desc "Deploy to all environments"
 task :deploy do
   unless ENV["DOCKER_MACHINE_NAME"]
     puts "Docker machine does not appear to be set. Try:"
-    puts "eval \"$(docker-machine env dev)\""
+    puts "eval \"$(docker-machine env default)\""
     exit 1
   end
 
@@ -17,6 +17,6 @@ desc "Build an env string, suitable for `heroku config:set`"
 task :env do
   env        = File.read File.expand_path "../.env", __FILE__
   fields     = env.gsub(/^export /, '').lines
-  applicable = fields.reject { |f| f =~ /^DATABASE_URL/ }
+  applicable = fields.reject { |f| f =~ /^(DATABASE_URL|DB_URL)/ }
   puts applicable.join(" ").gsub /\s+/, ' '
 end

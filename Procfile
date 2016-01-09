@@ -1,1 +1,1 @@
-web: ./zorya
+worker: ./zorya

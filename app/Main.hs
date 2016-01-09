@@ -2,7 +2,7 @@ module Main where
 
 import Control.Monad.Reader   (runReaderT)
 import Data.Monoid            ((<>))
-import Data.String            (IsString(..))
+import Data.Text              (Text, pack, unpack)
 import System.Environment     (lookupEnv)
 
 import           Types
@@ -13,11 +13,15 @@ import           RSS      (checkFeeds)
 import           Schedule (runScheduler)
 import qualified Slack    as S
 
-env :: Read v => String -> v -> IO v
-env key fallback = maybe fallback read <$> lookupEnv key
+env :: String -> Text -> IO Text
+env key fallback = do
+  v <- lookupEnv key
+  case v of
+    Nothing -> return fallback
+    Just v' -> return $ pack v'
 
-requireEnv :: IsString v => String -> IO v
-requireEnv key = maybe failure fromString <$> lookupEnv key
+requireEnv :: String -> IO Text
+requireEnv key = env key failure
   where
     failure = error $ "Required key missing: " ++ key
 
@@ -26,14 +30,14 @@ getBotConf = do
   envName       <- env "NAME" "[Dev]"
   let botName = "Zorya " <> envName
   apiToken      <- requireEnv "SLACK_API_TOKEN"
-  dbPool        <- requireEnv "DB_URL" >>= poolFromConnString
+  dbPool        <- requireEnv "DB_URL" >>= poolFromConnString . unpack
   rabbitChannel <- getRabbitConf >>= R.runRabbit
   rtorrentUrl   <- requireEnv "RTORRENT_URL"
   return BotConf{..}
 
 getRabbitConf :: IO RabbitConf
 getRabbitConf = do
-  rabbitHost  <- requireEnv "RABBIT_HOST"
+  rabbitHost  <- unpack <$> requireEnv "RABBIT_HOST"
   rabbitVHost <- requireEnv "RABBIT_VHOST"
   rabbitUser  <- requireEnv "RABBIT_USERNAME"
   rabbitPass  <- requireEnv "RABBIT_PASSWORD"

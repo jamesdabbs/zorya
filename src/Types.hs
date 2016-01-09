@@ -16,8 +16,8 @@ data BotConf = BotConf
              { botName       :: !Text
              , apiToken      :: !Text
              , rtorrentUrl   :: !Text
-             , rabbitChannel :: AMQP.Channel
-             , dbPool        :: P.ConnectionPool
+             , rabbitChannel :: !AMQP.Channel
+             , dbPool        :: !P.ConnectionPool
              }
 
 newtype Z a = Z
