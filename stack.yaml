@@ -6,6 +6,9 @@ resolver: lts-3.7
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
+- location:
+    git:    'https://github.com/jamesdabbs/haxr.git'
+    commit: '8e2d47525e9f6d5aa48e4d50fbf01a62656f8c2a'
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:

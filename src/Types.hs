@@ -15,17 +15,16 @@ import qualified Database.Persist.Postgresql as P
 data BotConf = BotConf
              { botName       :: !Text
              , apiToken      :: !Text
+             , rtorrentUrl   :: !Text
              , rabbitChannel :: AMQP.Channel
              , dbPool        :: P.ConnectionPool
              }
 
-newtype Slack a = Slack
-  { runSlack :: ReaderT BotConf IO a
+newtype Z a = Z
+  { runZ :: ReaderT BotConf IO a
   } deriving (Applicative, Functor, Monad, MonadIO, MonadReader BotConf)
 
 type TimeStamp = Text
-
-type Channel = Text
 
 data AttachmentField = AttachmentField
                      { afValue :: Text
@@ -141,4 +140,4 @@ data RabbitConf = RabbitConf
 
 data Frequency = Hours Int | Minutes Int | Seconds Int
 
-type RabbitHandler = Text -> ByteString -> Slack ()
+type RabbitHandler = Text -> AMQP.Message -> ByteString -> Z ()

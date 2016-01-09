@@ -1,17 +1,17 @@
 module Main where
 
-import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader   (runReaderT)
+import Data.Monoid            ((<>))
 import Data.String            (IsString(..))
 import System.Environment     (lookupEnv)
 
 import           Types
-import           Bot      (slack, runRtmBot)
 import           DB       (poolFromConnString, runMigrations)
-import           Download (downloadAttachedItem)
-import qualified Rabbit
+import           Handlers (downloadAttachedItem)
+import qualified Rabbit   as R
 import           RSS      (checkFeeds)
 import           Schedule (runScheduler)
+import qualified Slack    as S
 
 env :: Read v => String -> v -> IO v
 env key fallback = maybe fallback read <$> lookupEnv key
@@ -23,10 +23,12 @@ requireEnv key = maybe failure fromString <$> lookupEnv key
 
 getBotConf :: IO BotConf
 getBotConf = do
-  let botName = "Zorya"
+  envName       <- env "NAME" "[Dev]"
+  let botName = "Zorya " <> envName
   apiToken      <- requireEnv "SLACK_API_TOKEN"
-  dbPool        <- requireEnv "DATABASE_URL" >>= poolFromConnString
-  rabbitChannel <- getRabbitConf >>= Rabbit.runRabbit
+  dbPool        <- requireEnv "DB_URL" >>= poolFromConnString
+  rabbitChannel <- getRabbitConf >>= R.runRabbit
+  rtorrentUrl   <- requireEnv "RTORRENT_URL"
   return BotConf{..}
 
 getRabbitConf :: IO RabbitConf
@@ -37,34 +39,39 @@ getRabbitConf = do
   rabbitPass  <- requireEnv "RABBIT_PASSWORD"
   return RabbitConf{..}
 
+
 main :: IO ()
 main = do
   conf <- getBotConf
 
   runMigrations conf
 
-  let runIO a = runReaderT (runSlack a) conf
+  let runIO a = runReaderT (runZ a) conf
 
-  runIO $ slack "#_robots" "/me is waking up"
+  runIO $ S.debug "is waking up"
 
-  Rabbit.bindHandlers runIO (rabbitChannel conf) amqpHandlers
-  runScheduler        runIO scheduledEvents
-  runRtmBot           runIO (apiToken conf) slackDirectives
+  R.bindHandlers runIO (rabbitChannel conf) amqpHandlers
+  runScheduler runIO scheduledEvents
 
-  runIO $ slack "#_robots" "/me is going to sleep"
+  putStrLn "Ready to go!"
+  S.runRtmBot runIO (apiToken conf) slackDirectives -- N.B. This one blocks ...
 
-slackDirectives :: Event -> Slack ()
+  runIO $ S.debug "/me is going to sleep"
+
+slackDirectives :: Event -> Z ()
 slackDirectives event = case event of
   StarAdded{..} -> downloadAttachedItem item
   -- EventMessage Message{..} -> unless (msgUser == "Zorya") $ slack robots msgText
   _ -> return ()
 
-scheduledEvents :: [ (Frequency, Slack ()) ]
+scheduledEvents :: [ (Frequency, Z ()) ]
 scheduledEvents =
-  [ (Hours  12, checkFeeds)
+  [ (Hours 1, checkFeeds)
   -- , (Minutes 1, liftIO $ putStrLn "Still alive")
   ]
 
 amqpHandlers :: [ (Queue, RabbitHandler) ]
 amqpHandlers =
-  [ (Rabbit.logQ, Rabbit.echoToSlack) ]
+  [ (R.logQ, R.echoToSlack)
+  , (R.rpcQ, R.doRpc)
+  ]

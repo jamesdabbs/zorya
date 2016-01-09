@@ -8,7 +8,6 @@ import Data.Aeson                 (json')
 import Data.Aeson.Encode.Pretty   (encodePretty)
 
 pprint :: ByteString -> ByteString
-pprint s = encodePretty $
-  case parse json' s of
-    Done _ v -> v
-    _        -> error "Invalid JSON"
+pprint s = case parse json' s of
+  Done _ v -> encodePretty v
+  _        -> s

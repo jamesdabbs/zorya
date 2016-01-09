@@ -12,10 +12,10 @@ import Types
 catchAndNotify :: IO a -> IO a
 catchAndNotify = id
 
-runScheduler :: (Slack () -> IO ()) -> [ (Frequency, Slack ()) ] -> IO ()
+runScheduler :: (Z () -> IO ()) -> [ (Frequency, Z ()) ] -> IO ()
 runScheduler runIO items = forM_ items (startWorker runIO)
 
-startWorker :: (Slack () -> IO ()) -> (Frequency, Slack ()) -> IO ThreadId
+startWorker :: (Z () -> IO ()) -> (Frequency, Z ()) -> IO ThreadId
 startWorker run (delay, action) = forkIO . forever $ do
   catchAndNotify $ run action
   sleep delay

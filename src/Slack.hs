@@ -1,8 +1,9 @@
-module Bot
+module Slack
   ( slack
   , slackA
   , runRtmBot
-  , robots
+  , debug
+  , Channel
   ) where
 
 import           Control.Lens               ((.~), (&), (^?), (^.))
@@ -28,10 +29,12 @@ import           System.IO.Streams.SSL      (sslToStreams)
 import Types
 import Util
 
-slack :: Channel -> T.Text -> Slack ()
+type Channel = T.Text
+
+slack :: Channel -> T.Text -> Z ()
 slack channel text = slackA channel text []
 
-slackA :: Channel -> T.Text -> [(T.Text, T.Text)] -> Slack ()
+slackA :: Channel -> T.Text -> [(T.Text, T.Text)] -> Z ()
 slackA channel text attached = do
   conf <- ask
   let opts = defaults
@@ -43,8 +46,6 @@ slackA channel text attached = do
            & param "icon_emoji"  .~ [":star2:" :: T.Text]
            & param "attachments" .~ [formatAttachments attached]
   let body = [] :: [FormParam]
-
-  _ <- liftIO $ putStrLn $ T.unpack $ formatAttachments attached
 
   _ <- liftIO $ postWith opts "http://slack.com/api/chat.postMessage" body
   -- TODO: check response, handle non-200s
@@ -66,7 +67,7 @@ formatAttachments pairs =
           ]
         }
 
-runRtmBot :: (Slack () -> IO ()) -> T.Text -> (Event -> Slack ()) -> IO ()
+runRtmBot :: (Z () -> IO ()) -> T.Text -> (Event -> Z ()) -> IO ()
 runRtmBot runIO token directives = do
   (host, path) <- getSlackWebsocket token
   SSL.withOpenSSL $ do
@@ -112,11 +113,7 @@ getStreamForWebsocket host = do
   (i,o) <- sslToStreams ssl
   WS.makeStream  (StreamsIO.read i) (\b -> StreamsIO.write (B.toStrict <$> b) o )
 
-
-robots :: Channel
-robots = "#_robots"
-
-handleEvents :: (Event -> Slack ()) -> WS.Connection -> Slack ()
+handleEvents :: (Event -> Z ()) -> WS.Connection -> Z ()
 handleEvents directives ws = do
   raw <- liftIO $ WS.receiveData ws
   case eitherDecode raw of
@@ -125,3 +122,6 @@ handleEvents directives ws = do
       BC.putStrLn $ pprint raw
       putStrLn ""
     Right event -> directives event
+
+debug :: T.Text -> Z ()
+debug = slack "#_robots"

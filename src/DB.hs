@@ -8,7 +8,7 @@ module DB
   ) where
 
 import           Control.Monad.IO.Class      (MonadIO, liftIO)
-import           Control.Monad.Logger        (runStdoutLoggingT)
+import           Control.Monad.Logger        (runStdoutLoggingT, runNoLoggingT)
 import           Control.Monad.Reader        (MonadReader, asks)
 import qualified Data.Text                   as T
 import           Data.Text.Encoding          (encodeUtf8)
@@ -20,7 +20,7 @@ import Types
 import Model (migrateAll)
 
 poolFromConnString :: String -> IO ConnectionPool
-poolFromConnString cs = runStdoutLoggingT $ createPostgresqlPool cs' 10
+poolFromConnString cs = runNoLoggingT $ createPostgresqlPool cs' 10
   where
     cs' = normalize $ parseDatabaseUrl cs
     normalize = encodeUtf8 . T.unwords . map (\(k,v) -> T.concat [k, "='", v, "'"])

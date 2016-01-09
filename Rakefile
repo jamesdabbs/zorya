@@ -12,3 +12,11 @@ task :deploy do
     system "heroku docker:release --app #{sister}"
   end
 end
+
+desc "Build an env string, suitable for `heroku config:set`"
+task :env do
+  env        = File.read File.expand_path "../.env", __FILE__
+  fields     = env.gsub(/^export /, '').lines
+  applicable = fields.reject { |f| f =~ /^DATABASE_URL/ }
+  puts applicable.join(" ").gsub /\s+/, ' '
+end
