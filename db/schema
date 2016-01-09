@@ -1,0 +1,13 @@
+Feed json
+  title     Text
+  url       Text
+  lastRunAt UTCTime Maybe
+
+FeedItem json
+  feedId      FeedId
+  guid        Text
+  title       Text
+  description Text
+  downloadUrl Text
+  createdAt   UTCTime
+  UniqueFeedItemGuid guid

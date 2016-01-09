@@ -2,18 +2,26 @@
 
 module Types where
 
-import Control.Applicative    ((<|>))
-import Control.Monad.Reader   (ReaderT)
+import Control.Applicative        ((<|>))
+import Control.Monad.Reader       (MonadIO, MonadReader, ReaderT)
 import Data.Aeson
-import Data.Aeson.Types       (Parser)
-import Data.Text              (Text)
+import Data.Aeson.Types           (Parser)
+import Data.ByteString.Lazy.Char8 (ByteString)
+import Data.Text                  (Text)
+
+import qualified Network.AMQP as AMQP
+import qualified Database.Persist.Postgresql as P
 
 data BotConf = BotConf
-             { botName  :: !Text
-             , apiToken :: !Text
-             } deriving Show
+             { botName       :: !Text
+             , apiToken      :: !Text
+             , rabbitChannel :: AMQP.Channel
+             , dbPool        :: P.ConnectionPool
+             }
 
-type Slack a = ReaderT BotConf IO a
+newtype Slack a = Slack
+  { runSlack :: ReaderT BotConf IO a
+  } deriving (Applicative, Functor, Monad, MonadIO, MonadReader BotConf)
 
 type TimeStamp = Text
 
@@ -31,6 +39,12 @@ instance FromJSON AttachmentField where
     afShort <- v .: "short"
     afTitle <- v .: "title"
     return AttachmentField{..}
+instance ToJSON AttachmentField where
+  toJSON AttachmentField{..} = object
+    [ "value" .= afValue
+    , "short" .= afShort
+    , "title" .= afTitle
+    ]
 
 data Attachment = Attachment
                 { atId       :: Int
@@ -43,6 +57,10 @@ instance FromJSON Attachment where
     atFallback <- v .: "fallback"
     atFields   <- v .:? "fields" .!= []
     return Attachment{..}
+instance ToJSON Attachment where
+  toJSON Attachment{..} = object
+    [ "fields" .= atFields
+    ]
 
 
 -- Question: what's the right way to unify this with the message type?
@@ -100,7 +118,7 @@ instance FromJSON Event where
           else return MessageError -- <$> v .: "reply_to" <*> v .: "error"
 
 parseEvent :: Text -> Value -> Parser Event
-parseEvent t = withObject "event" $ \v -> do
+parseEvent t = withObject "event" $ \v ->
   case t of
     "message" -> do
       m <- parseJSON $ Object v
@@ -112,8 +130,6 @@ parseEvent t = withObject "event" $ \v -> do
       return StarAdded{..}
     _ -> return UnknownEvent
 
-type Directives = Event -> Slack ()
-
 type Queue = Text
 
 data RabbitConf = RabbitConf
@@ -122,3 +138,7 @@ data RabbitConf = RabbitConf
                 , rabbitUser  :: !Text
                 , rabbitPass  :: !Text
                 } deriving Show
+
+data Frequency = Hours Int | Minutes Int | Seconds Int
+
+type RabbitHandler = Text -> ByteString -> Slack ()

@@ -1,21 +1,20 @@
-{-# LANGUAGE OverloadedStrings #-}
-
-module Bot where
+module Bot
+  ( slack
+  , slackA
+  , runRtmBot
+  , robots
+  ) where
 
 import           Control.Lens               ((.~), (&), (^?), (^.))
 import           Control.Monad              (forever, unless)
 import           Control.Monad.IO.Class     (liftIO)
-import           Control.Monad.Reader       (runReaderT, ask)
-import           Data.Aeson                 (eitherDecode)
+import           Control.Monad.Reader       (ask)
+import           Data.Aeson                 (eitherDecode, encode)
 import           Data.Aeson.Lens            (Primitive(..), _Primitive, _String, key)
 import qualified Data.ByteString.Lazy       as B
 import qualified Data.ByteString.Lazy.Char8 as BC
-import           Data.Foldable              (forM_)
-import           Data.Monoid                ((<>))
-import qualified Data.List                  as L
 import qualified Data.Text                  as T
-import           Network.AMQP               hiding (Channel, Message)
-import qualified Network.AMQP               as AMQP
+import           Data.Text.Encoding         (decodeUtf8)
 import qualified Network.Socket             as S
 import qualified Network.URI                as URI
 import qualified Network.WebSockets         as WS
@@ -26,45 +25,58 @@ import qualified OpenSSL.Session            as SSL
 import qualified System.IO.Streams.Internal as StreamsIO
 import           System.IO.Streams.SSL      (sslToStreams)
 
-
 import Types
 import Util
 
--- Actual business logic
+slack :: Channel -> T.Text -> Slack ()
+slack channel text = slackA channel text []
 
-directives :: Directives
-directives event = do
-  case event of
-    EventMessage Message{..} -> do
-      unless (msgUser == "Zorya") $ do
-        send robots msgText
+slackA :: Channel -> T.Text -> [(T.Text, T.Text)] -> Slack ()
+slackA channel text attached = do
+  conf <- ask
+  let opts = defaults
+           & param "token"       .~ [apiToken conf]
+           & param "channel"     .~ [channel]
+           & param "text"        .~ [text]
+           & param "username"    .~ [botName conf]
+           & param "as_user"     .~ ["false" :: T.Text]
+           & param "icon_emoji"  .~ [":star2:" :: T.Text]
+           & param "attachments" .~ [formatAttachments attached]
+  let body = [] :: [FormParam]
 
-    StarAdded{..} -> forM_ (starredDownloadLink item) downloadLink
+  _ <- liftIO $ putStrLn $ T.unpack $ formatAttachments attached
 
-    _ -> return ()
+  _ <- liftIO $ postWith opts "http://slack.com/api/chat.postMessage" body
+  -- TODO: check response, handle non-200s
   return ()
 
-echoLogToSlack, notifyOfNewRssItems :: T.Text -> BC.ByteString -> Slack ()
-echoLogToSlack k body = do
-  let body' = T.pack . BC.unpack . pprint $ body
-      msg   = "*" <> k <> "*\n```" <> body' <> "```\n"
-  send robots msg
+formatAttachments :: [(T.Text, T.Text)] -> T.Text
+formatAttachments pairs =
+  decodeUtf8 . BC.toStrict . encode $ map mkAttachment pairs
+    where
+      mkAttachment (k,v) = Attachment
+        { atId       = -1
+        , atFallback = ""
+        , atFields =
+          [ AttachmentField
+            { afTitle = k
+            , afValue = v
+            , afShort = False
+            }
+          ]
+        }
 
-notifyOfNewRssItems _ _ = do
-  send rss "Got new item"
-
-downloadLink :: T.Text -> Slack ()
-downloadLink url = do
-  send robots $ "Should download link: " <> url
-
-
--- Infrastructure and helpers
-
-starredDownloadLink :: Item -> Maybe T.Text
-starredDownloadLink item = afValue <$> L.find match fields
+runRtmBot :: (Slack () -> IO ()) -> T.Text -> (Event -> Slack ()) -> IO ()
+runRtmBot runIO token directives = do
+  (host, path) <- getSlackWebsocket token
+  SSL.withOpenSSL $ do
+    stream <- getStreamForWebsocket host
+    WS.runClientWithStream stream host path WS.defaultConnectionOptions [] wsApp
   where
-    fields  = concat . map atFields $ itAttachments item
-    match a = afTitle a == "Download"
+    wsApp ws = do
+      WS.forkPingThread ws 10
+      runIO . forever $ handleEvents directives ws
+
 
 parseWebsocket :: T.Text -> (S.HostName, String)
 parseWebsocket url =
@@ -100,94 +112,16 @@ getStreamForWebsocket host = do
   (i,o) <- sslToStreams ssl
   WS.makeStream  (StreamsIO.read i) (\b -> StreamsIO.write (B.toStrict <$> b) o )
 
-runBot :: BotConf -> RabbitConf -> IO ()
-runBot bc rc = do
-  (host, path) <- getSlackWebsocket $ apiToken bc
-  SSL.withOpenSSL $ do
-    stream <- getStreamForWebsocket host
-    WS.runClientWithStream stream host path WS.defaultConnectionOptions [] (mkBot bc rc)
 
-getConf :: Slack BotConf
-getConf = ask
-
-send :: Channel -> T.Text -> Slack ()
-send channel text = do
-  conf <- getConf
-  let opts = defaults
-           & param "token"      .~ [apiToken conf]
-           & param "channel"    .~ [channel]
-           & param "text"       .~ [text]
-           & param "username"   .~ [botName conf]
-           & param "as_user"    .~ [("false" :: T.Text)]
-           & param "icon_emoji" .~ [(":star2:" :: T.Text)]
-  let body = [] :: [FormParam]
-
-  _ <- liftIO $ postWith opts "http://slack.com/api/chat.postMessage" body
-  -- TODO: check response, handle non-200s
-  return ()
-
-
-rssQ, logQ :: Queue
-rssQ = "rss"
-logQ = "log"
-
-robots, rss :: Channel
+robots :: Channel
 robots = "#_robots"
-rss    = "rss"
 
-onMessage :: AMQP.Channel -> T.Text -> (T.Text -> BC.ByteString -> IO ()) -> IO ()
-onMessage chan q handler = do
-  _ <- consumeMsgs chan q Ack $ \(msg, env) -> do
-    handler (envRoutingKey env) (msgBody msg)
-    ackEnv env
-  return ()
-
-startRabbit :: RabbitConf -> IO AMQP.Channel
-startRabbit RabbitConf{..} = do
-  conn <- openConnection rabbitHost rabbitVHost rabbitUser rabbitPass
-  chan <- openChannel conn
-
-  declareExchange chan newExchange
-    { exchangeName = "notifications"
-    , exchangeType = "topic"
-    , exchangeDurable = True
-    }
-
-  _ <- declareQueue chan newQueue { queueName = logQ, queueDurable = False }
-  bindQueue chan logQ "notifications" "#"
-
-  _ <- declareQueue chan newQueue { queueName = rssQ, queueDurable = True }
-  bindQueue chan rssQ "notifications" "rss.#"
-
-  return chan
-
-mkBot :: BotConf -> RabbitConf -> WS.ClientApp ()
-mkBot bc rc conn = do
-  WS.forkPingThread conn 10
-
-  chan <- startRabbit rc
-  onMessage chan logQ (runH echoLogToSlack)
-  onMessage chan rssQ (runH notifyOfNewRssItems)
-
-  runIO $ do
-    send robots "/me is waking up"
-    liftIO $ putStrLn "Ready to go!"
-    _ <- forever loop
-    send robots "/me is going to sleep"
-
-  where
-    runIO :: Slack () -> IO ()
-    runIO a = runReaderT a bc
-
-    -- FIXME: clean this up
-    runH h k v = runIO $ h k v
-
-    loop = do
-      raw <- liftIO $ WS.receiveData conn
-      case eitherDecode raw of
-        Left e -> liftIO $ do
-          putStrLn $ "Failed to parse event: " ++ e
-          BC.putStrLn $ pprint raw
-          putStrLn ""
-        Right event -> directives event
-
+handleEvents :: (Event -> Slack ()) -> WS.Connection -> Slack ()
+handleEvents directives ws = do
+  raw <- liftIO $ WS.receiveData ws
+  case eitherDecode raw of
+    Left e -> liftIO $ do
+      putStrLn $ "Failed to parse event: " ++ e
+      BC.putStrLn $ pprint raw
+      putStrLn ""
+    Right event -> directives event
