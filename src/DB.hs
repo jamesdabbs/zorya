@@ -4,6 +4,7 @@
 module DB
   ( poolFromConnString
   , runDB
+  , runDB_
   , runMigrations
   ) where
 
@@ -31,6 +32,10 @@ runDB :: (MonadReader BotConf m, MonadIO m) =>
 runDB q = do
   p <- asks dbPool
   liftIO $ runSqlPool q p
+
+runDB_ :: (MonadReader BotConf m, MonadIO m) =>
+         SqlPersistT IO b -> m ()
+runDB_ q = runDB q >> return ()
 
 runMigrations :: BotConf -> IO ()
 runMigrations c = runSqlPool (runMigration migrateAll) (dbPool c)

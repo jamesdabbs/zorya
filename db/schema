@@ -11,3 +11,9 @@ FeedItem json
   downloadUrl Text
   createdAt   UTCTime
   UniqueFeedItemGuid guid
+
+Download json
+  hash     Text
+  name     Text
+  complete Bool
+  UniqueDownloadHash hash

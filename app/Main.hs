@@ -7,6 +7,7 @@ import System.Environment     (lookupEnv)
 
 import           Types
 import           DB       (poolFromConnString, runMigrations)
+import           Download (checkForNewDownloads)
 import           Handlers (downloadAttachedItem)
 import qualified Rabbit   as R
 import           RSS      (checkFeeds)
@@ -70,7 +71,8 @@ slackDirectives event = case event of
 
 scheduledEvents :: [ (Frequency, Z ()) ]
 scheduledEvents =
-  [ (Hours 1, checkFeeds)
+  [ (Hours    1, checkFeeds)
+  , (Minutes 15, checkForNewDownloads)
   -- , (Minutes 1, liftIO $ putStrLn "Still alive")
   ]
 

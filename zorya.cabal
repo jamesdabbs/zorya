@@ -34,28 +34,26 @@ library
                      , bytestring
                      , feed
                      , haxr
+                     , heroku
                      , HsOpenSSL
                      , io-streams
                      , lens
                      , lens-aeson
+                     , monad-logger
                      , mtl
                      , network
                      , network-uri
                      , openssl-streams
-                     , regex-base
-                     , regex-posix
-                     , text
-                     , transformers
-                     , websockets
-                     , wreq
-                     -- Added for pg exploration; check these
-                     , heroku
-                     , monad-logger
                      , persistent
                      , persistent-template
                      , persistent-postgresql
-                     , scotty
+                     , regex-base
+                     , regex-posix
+                     , text
                      , time
+                     , transformers
+                     , websockets
+                     , wreq
   default-language:    Haskell2010
   default-extensions:  GeneralizedNewtypeDeriving
                      , OverloadedStrings
